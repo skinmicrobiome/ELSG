@@ -1,0 +1,15 @@
+rule eukcc:
+    input:
+        "results/{sample}/03_analysis/all_bins"
+    output:
+        "results/{sample}/03_analysis/eukcc_results/eukcc.csv"
+    params:
+        outdir="results/{sample}/03_analysis/eukcc_results",
+    conda:
+        "envs/eukcc.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        rm -rf {params.outdir}
+        eukcc folder --out {params.outdir} --threads {threads} {input}
+        """

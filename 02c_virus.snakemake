@@ -1,0 +1,40 @@
+rule run_blastn:
+    input:
+        "results/{sample}/01_assembly/final.contigs.fa",
+    output:
+        "results/{sample}/01_assembly/final.contigs.nt.tsv"
+    params:
+        database="/home/shenz4/data/databases/blastdb/nt"
+    threads: workflow.cores
+    shell:
+        """
+        blastn -query {input} -db {params.database} -evalue 10 -max_target_seqs 2 -outfmt '6 std qlen slen staxids sscinames stitle' -out {output} -num_threads {threads}
+        """
+
+rule select_viral_contigs:
+    input:
+        contigs="results/{sample}/01_assembly/final.contigs.fa",
+        blast="results/{sample}/01_assembly/final.contigs.nt.tsv"
+    output:
+        "results/{sample}/01_assembly/euk.viral.contigs.fa"
+    shell:
+        """
+        python3 scripts/select_viral_contigs.py {input.contigs} {input.blast} {output}
+        """
+        
+rule run_checkv:
+    input:
+        "results/{sample}/01_assembly/euk.viral.contigs.fa"
+    output:
+        directory("results/{sample}/01_assembly/checkv_output")
+    conda:
+        "envs/checkv.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -d checkv-db-v1.5 ]
+        then
+        checkv download_database ./
+        fi
+        checkv end_to_end {input} {output} -t {threads} -d ./checkv-db-v1.5
+        """

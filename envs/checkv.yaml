@@ -1,0 +1,7 @@
+channels:
+  - defaults
+  - conda-forge
+  - bioconda
+dependencies:
+  - checkv =1.0.0
+  - prodigal =2.6.3

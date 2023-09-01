@@ -1,0 +1,52 @@
+rule all:
+    input:
+        "results/{sample}/03_analysis/all_bins"
+
+rule assembly:
+    input:
+        fwd="data/{sample}_1.fastq",
+        rev="data/{sample}_2.fastq"
+    output:
+        "results/{sample}/01_assembly/final.contigs.fa",
+    params:
+        outdir="results/{sample}/01_assembly/",
+    conda:
+        "envs/assembly.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        rm -rf {params.outdir}
+        megahit -1 {input.fwd} -2 {input.rev} -o {params.outdir} -t {threads}
+        """
+        
+rule binning:
+    input:
+        assembly="results/{sample}/01_assembly/final.contigs.fa",
+        fwd="data/{sample}_1.fastq",
+        rev="data/{sample}_2.fastq"
+    output:
+        directory("results/{sample}/02_binning")
+    conda:
+        "envs/binning.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        metawrap binning -t {threads} -a {input.assembly} --metabat2 -l 1500 -o {output} {input.fwd} {input.rev}
+        metawrap binning -t {threads} -a {input.assembly} --maxbin2 -l 1500 -o {output} {input.fwd} {input.rev}
+        metawrap binning -t {threads} -a {input.assembly} --concoct -l 1500 -o {output} {input.fwd} {input.rev}
+        """
+
+rule aggregate_bins:
+    input:
+        "results/{sample}/02_binning"
+    output:
+        directory("results/{sample}/03_analysis/all_bins")
+    shell:
+        """
+        mkdir -p {output}
+        for software in concoct metabat2 maxbin2; do
+        for file in {input}/${{software}}_bins/bin.[0-9]*.fa; do
+        cp ${{file}} {output}/${{software}}.$(echo ${{file}} | rev | cut -d '/' -f1 | rev)
+        done
+        done
+        """    

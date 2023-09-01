@@ -1,0 +1,147 @@
+rule bin_refinement:
+    input:
+        concoct_bins="results/{sample}/02_binning/concoct_bins",
+        maxbin2_bins="results/{sample}/02_binning/maxbin2_bins",
+        metabat2_bins="results/{sample}/02_binning/metabat2_bins"
+    output:
+        directory("results/{sample}/03_analysis/refined_bins/metawrap_0_100_bins")
+    params:
+        outdir="results/{sample}/03_analysis/refined_bins",
+    conda:
+        "envs/binning.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        rm -rf {params.outdir}
+        if [ ! -d checkm_data ]
+        then
+        wget https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz
+        mkdir -p checkm_data
+        tar -xvzf checkm_data_2015_01_16.tar.gz -C checkm_data
+        rm checkm_data_2015_01_16.tar.gz 
+        fi
+        checkm data setRoot checkm_data
+        metawrap bin_refinement -o {params.outdir} -t {threads} -A {input.metabat2_bins} -B {input.maxbin2_bins} -C {input.concoct_bins} -c 0 -x 100
+        """
+
+rule run_checkm1:
+    input:
+        "results/{sample}/03_analysis/refined_bins/metawrap_0_100_bins"
+    output:
+        "results/{sample}/03_analysis/refined_bins/checkm1_metrics.tsv"
+    params:
+        outdir="results/{sample}/03_analysis/refined_bins",
+    conda:
+        "envs/checkm1.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -d checkm_data ]
+        then
+        wget https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz
+        mkdir -p checkm_data
+        tar -xvzf checkm_data_2015_01_16.tar.gz -C checkm_data
+        rm checkm_data_2015_01_16.tar.gz 
+        fi
+        checkm data setRoot checkm_data
+        checkm lineage_wf -t {threads} -x fa --tab_table -f {output} {input} {params.outdir}
+        """
+
+rule run_checkm2:
+    input:
+        "results/{sample}/03_analysis/refined_bins/metawrap_0_100_bins"
+    output:
+        directory("results/{sample}/03_analysis/refined_bins/checkm2_output")
+    params:
+        outdir="results/{sample}/03_analysis/refined_bins",
+    conda:
+        "envs/checkm2.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -d CheckM2_database ]
+        then
+        checkm2 database --download --path .
+        fi
+        checkm2 predict --threads {threads} --input {input} --output-directory {output} -x .fa
+        """
+
+rule filter_bins_on_checkm:
+    input:
+        checkm1="results/{sample}/03_analysis/refined_bins/checkm1_metrics.tsv",
+        checkm2="results/{sample}/03_analysis/refined_bins/checkm2_output"
+    output:
+        directory("results/{sample}/03_analysis/refined_bins/pass_checkm")
+    params:
+        bindir="results/{sample}/03_analysis/refined_bins/metawrap_0_100_bins",
+    shell:
+        """
+        python3 scripts/filter_bins_checkm.py {input.checkm1} {input.checkm2}/quality_report.tsv {params.bindir} {output}
+        """
+
+rule run_gunc:
+    input:
+        "results/{sample}/03_analysis/refined_bins/pass_checkm"
+    output:
+        directory("results/{sample}/03_analysis/refined_bins/GUNC_output")
+    conda:
+        "envs/gunc.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -f gunc_db_progenomes2.1.dmnd ]
+        then
+        gunc download_db .
+        fi
+        mkdir -p {output}
+        gunc run --input_dir {input} --out_dir {output} --db_file gunc_db_progenomes2.1.dmnd --threads {threads}
+        """
+
+rule filter_bins_on_gunc:
+    input:
+        "results/{sample}/03_analysis/refined_bins/GUNC_output"
+    output:
+        directory("results/{sample}/03_analysis/refined_bins/pass_gunc")
+    params:
+        bindir="results/{sample}/03_analysis/refined_bins/pass_checkm",
+    shell:
+        """
+        python3 scripts/filter_bins_gunc.py {input}/GUNC.progenomes_2.1.maxCSS_level.tsv {params.bindir} {output}
+        """
+
+SAMPLES, = glob_wildcards("results/{sample}/02_binning")
+print(SAMPLES)
+
+rule aggregate_bins:
+    input:
+        expand("results/{sample}/03_analysis/refined_bins/pass_gunc", sample=SAMPLES)
+    output:
+        directory("results/all_bins/predereplicated/prokaryota")
+    shell:
+        """
+        rm -rf {output}
+        mkdir -p {output}
+        for folder in {input}; do
+        for file in ${{folder}}/bin.[0-9]*.fa; do
+        cp ${{file}} {output}/$(echo ${{file}} | cut -d '/' -f2)_prok_$(echo ${{file}} | rev | cut -d '/' -f1 | rev)
+        done
+        done
+        """
+        
+rule run_gtdbtk:
+    input:
+        "results/all_bins/predereplicated/prokaryota"
+    output:
+        directory("results/all_bins/GTDB_207v2")
+    conda:
+        "envs/gtdbtk.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -d release207_v2 ]
+        then
+        download-db.sh
+        fi
+        rm -rf {output}
+        gtdbtk classify_wf --cpus {threads} --genome_dir {input} --out_dir {output} -x fa
+        """

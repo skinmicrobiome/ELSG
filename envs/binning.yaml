@@ -1,0 +1,8 @@
+channels:
+  - defaults
+  - conda-forge
+  - bioconda
+  - ursky
+dependencies:
+  - metawrap-mg =1.3.2
+  - blas=2.5=mkl
