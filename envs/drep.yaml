@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.9
+  - drep=3.2.2
+  - mash=1.1

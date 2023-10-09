@@ -1,0 +1,44 @@
+rule convert_checkm_to_drep_format:
+    input:
+        "results/all_bins/predereplicated/checkm2_output/quality_report.tsv"
+    output:
+        "results/all_bins/predereplicated/checkm2_output/quality_report_drep.csv"
+    shell:
+        """
+        echo "genome,completeness,contamination" > {output}
+        tail -n +2 -q {input} | awk -F'\t' '{{print ""$1,$2,$3""}}' | awk '$1=$1".fa"' OFS=',' >> {output}
+        """
+
+#Please make sure all dependencies are installed: https://drep.readthedocs.io/en/latest/installation.html
+rule dereplicate_nonredundant:
+    input:
+        bindir="results/all_bins/predereplicated/prokaryota",
+        checkm="results/all_bins/predereplicated/checkm2_output/quality_report_drep.csv"
+    output:
+        directory("results/all_bins/nonredundant/prokaryota")
+    conda:
+        "envs/drep.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        mkdir -p {output}
+        rm -rf {output}/*
+        dRep dereplicate -p {threads} {output} -g {input.bindir}/*.fa -pa 0.999 --SkipSecondary --genomeInfo {input.checkm} -comp 50 -con 10
+        """
+
+rule dereplicate_species_level:
+    input:
+        bindir="results/all_bins/predereplicated/prokaryota",
+        checkm="results/all_bins/predereplicated/checkm2_output/quality_report_drep.csv"
+    output:
+        directory("results/all_bins/dereplicated/prokaryota")
+    conda:
+        "envs/drep.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        mkdir -p {output}
+        rm -rf {output}/*
+        dRep dereplicate -p {threads} {output} -g {input.bindir}/*.fa -pa 0.90 -sa 0.95 -nc 0.30 -cm larger --S_algorithm fastANI --multiround_primary_clustering --run_tertiary_clustering --clusterAlg single --genomeInfo {input.checkm} -comp 50 -con 10
+        """
+

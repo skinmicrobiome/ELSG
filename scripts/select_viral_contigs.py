@@ -50,16 +50,19 @@ if __name__ == '__main__':
                     find_list.append((target_virus, 
                                       row[1]['stitle'], row[1]['query ID'], row[1]['pident'], 
                                       row[1]['length'], row[1]['qlen'], row[1]['slen']))
-        find_df = pd.DataFrame(find_list)
-        find_df.columns = ['target virus','stitle','query ID','pident','length',
-                           'qlen','slen']
-        find_df = find_df.drop_duplicates(keep='first', subset=['query ID','target virus'])
-        contig_list = list(find_df['query ID'])
-        find_df = find_df.set_index('query ID')
-        seq_lst = []
-        for seq_record in SeqIO.parse(contig_file, format = "fasta"):
-            if seq_record.id in contig_list:
-                seq_record.description += ' '+find_df.loc[seq_record.id, 'target virus'].replace(' ', '_')
-                seq_lst.append(seq_record)
-        SeqIO.write(seq_lst, output, "fasta")
+        if len(find_list) > 0:
+            find_df = pd.DataFrame(find_list)
+            find_df.columns = ['target virus','stitle','query ID','pident','length',
+                               'qlen','slen']
+            find_df = find_df.drop_duplicates(keep='first', subset=['query ID','target virus'])
+            contig_list = list(find_df['query ID'])
+            find_df = find_df.set_index('query ID')
+            seq_lst = []
+            for seq_record in SeqIO.parse(contig_file, format = "fasta"):
+                if seq_record.id in contig_list:
+                    seq_record.description += ' '+find_df.loc[seq_record.id, 'target virus'].replace(' ', '_')
+                    seq_lst.append(seq_record)
+            SeqIO.write(seq_lst, output, "fasta")
+        else:
+            print('No virus found!')
 

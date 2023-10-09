@@ -1,3 +1,4 @@
+#Installation of BLAST is required
 rule run_blastn:
     input:
         "results/{sample}/01_assembly/final.contigs.fa",

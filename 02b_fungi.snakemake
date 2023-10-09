@@ -1,4 +1,4 @@
-rule eukcc:
+rule run_eukcc:
     input:
         "results/{sample}/03_analysis/all_bins"
     output:
@@ -12,4 +12,34 @@ rule eukcc:
         """
         rm -rf {params.outdir}
         eukcc folder --out {params.outdir} --threads {threads} {input}
+        """
+
+rule filter_bins_on_eukcc:
+    input:
+        "results/{sample}/03_analysis/eukcc_results/eukcc.csv"
+    output:
+        directory("results/{sample}/03_analysis/eukcc_results/pass_eukcc")
+    params:
+        bindir="results/{sample}/03_analysis/all_bins",
+    shell:
+        """
+        python3 scripts/filter_bins_eukcc.py {input} {params.bindir} {output}
+        """
+
+#Installation of Mash is required. See installation: https://github.com/marbl/Mash
+rule run_mash:
+    input:
+        "results/{sample}/03_analysis/eukcc_results/pass_eukcc"
+    output:
+        directory("results/{sample}/03_analysis/eukcc_results/mash_results")
+    params:
+        database="data/genbank_ELSG_select_fungi.msh",
+    threads: workflow.cores
+    shell:
+        """
+        mkdir -p {output}
+        for file in {input}/*.fa; do
+        result="{output}/$(echo ${{file}} | grep -o '[^/]*$')__$(echo {params.database} | grep -o '[^/]*$' | sed s/.msh//g).dist"
+        mash dist {params.database} ${{file}} | sort -gk3 > ${{result}}
+        done
         """

@@ -127,7 +127,25 @@ rule aggregate_bins:
         done
         done
         """
-        
+
+rule run_checkm2_on_aggregate:
+    input:
+        "results/all_bins/predereplicated/prokaryota"
+    output:
+        directory("results/all_bins/predereplicated/checkm2_output")
+    conda:
+        "envs/checkm2.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -d CheckM2_database ]
+        then
+        checkm2 database --download --path .
+        fi
+        checkm2 predict --threads {threads} --input {input} --output-directory {output} -x .fa
+        """
+
+#Make sure you have the third-party software required by GTDB-tk as listed here: https://ecogenomics.github.io/GTDBTk/installing/index.html        
 rule run_gtdbtk:
     input:
         "results/all_bins/predereplicated/prokaryota"
@@ -138,10 +156,79 @@ rule run_gtdbtk:
     threads: workflow.cores
     shell:
         """
-        if [ ! -d release207_v2 ]
-        then
-        download-db.sh
-        fi
+        #download-db.sh || true
         rm -rf {output}
         gtdbtk classify_wf --cpus {threads} --genome_dir {input} --out_dir {output} -x fa
+        """
+
+rule run_prokka:
+    input:
+        "results/all_bins/predereplicated/prokaryota"
+    output:
+        directory("results/all_bins/prokka_output")
+    conda:
+        "envs/prokka.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        for file in {input}/*.fa; do
+        bin=$(echo ${{file}} | rev | cut -d "/" -f1 | rev | sed s/.fa//g)
+        prokka --kingdom Bacteria --outdir {output}/${{bin}} --locustag ${{bin}} --prefix ${{bin}} --cpus {threads} ${{file}}
+        done
+        """
+
+rule organize_bins_by_species:
+    input:
+        bindir="results/all_bins/predereplicated/prokaryota",
+        gtdbdir="results/all_bins/GTDB_207v2",
+        metricdir="results/all_bins/predereplicated/checkm2_output",
+        prokkadir="results/all_bins/prokka_output",
+    output:
+        directory("results/all_bins/intraspecies")
+    threads: workflow.cores
+    shell:
+        """
+        python3 scripts/organize_bins_by_species.py {input.bindir} {input.gtdbdir}/gtdbtk.bac120.summary.tsv {input.metricdir}/quality_report.tsv {input.prokkadir} {output}
+        """
+
+rule run_panaroo:
+    input:
+        "results/all_bins/intraspecies"
+    output:
+        "results/all_bins/panaroo_done.txt"
+    conda:
+        "envs/panaroo.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        for species_folder in $(ls -d {input}/qualifiedSpecies_*); do
+        panaroo -i ${{species_folder}}/*.gff -o ${{species_folder}}/panaroo_out --threads {threads} --clean-mode strict --merge_paralogs -c 0.90 --core_threshold 0.90 -f 0.5
+        done
+        touch {output}
+        """
+
+rule run_eggnog:
+    input:
+        "results/all_bins/panaroo_done.txt"
+    output:
+        "results/all_bins/eggnog_done.txt"
+    params:
+        folder="results/all_bins/intraspecies",
+    conda:
+        "envs/eggnog_mapper.yaml"
+    threads: workflow.cores
+    shell:
+        """
+        if [ ! -f bacteria.dmnd ]
+        then
+        download_eggnog_data.py --data_dir .
+        create_dbs.py -m diamond --dbname bacteria --taxa Bacteria --data_dir .
+        fi
+        for species_folder in $(ls -d {params.folder}/qualifiedSpecies_*); do
+        species=$(echo ${{species_folder}} | rev | cut -d '/' -f1 | rev | sed s/qualifiedSpecies_//g)
+        mkdir -p ${{species_folder}}/eggnog_output
+        rm -rf ${{species_folder}}/eggnog_output/* || true
+        emapper.py --data_dir . --dmnd_db bacteria.dmnd -i ${{species_folder}}/panaroo_out/pan_genome_reference.fa --itype CDS --translate --output_dir ${{species_folder}}/eggnog_output -o ${{species}} --cpu {threads}
+        done
+        touch {output}
         """
